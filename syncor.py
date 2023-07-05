@@ -88,7 +88,8 @@ def handle_url(args):
     print(f"handle url done! {begin_time} - {end_time}")
 
 
-def process_url(url):
+def process_url(urls_with_index):
+    (index, total, url) = urls_with_index
     url = unquote(url)
     name = os.path.basename(url)
     dir_name = os.path.dirname(url).replace("https://", '').replace("http://", '')
@@ -102,7 +103,7 @@ def process_url(url):
 
     with urllib.request.urlopen(request) as response, open(file_name, "ab") as file:
         shutil.copyfileobj(response, file)
-    print(f"save to: {file_name}")
+    print(f"[ {index}/{total} ]save to: {file_name}")
 
 
 def handle_download(args):
@@ -110,10 +111,17 @@ def handle_download(args):
         print(f"target manifest is {args.download}")
     with open(args.download, 'r') as tf:
         urls = tf.readlines()
-    urls = [url.strip() for url in urls]
-    pool = multiprocessing.Pool(args.job)
+    urls_with_index = []
+    total = len(urls)
+    for i, url in enumerate(urls):
+        url = url.strip()
+        if url.startswith("http"):
+            urls_with_index.append(
+                (i + 1, total, url)
+            )
 
-    pool.map_async(process_url, urls)
+    pool = multiprocessing.Pool(args.job)
+    pool.imap_unordered(process_url, urls_with_index)
 
     pool.close()
     pool.join()
