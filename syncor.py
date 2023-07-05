@@ -10,6 +10,8 @@ import argparse
 import datetime
 import multiprocessing
 import os.path
+import shutil
+import urllib
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -87,13 +89,20 @@ def handle_url(args):
 
 
 def process_url(url):
-    format_url = unquote(url)
-    file_name = os.path.basename(format_url)
-    dir_name = os.path.dirname(format_url).replace("https://", '').replace("http://", '')
-    path_to_save = os.path.join(dir_name, file_name)
+    url = unquote(url)
+    name = os.path.basename(url)
+    dir_name = os.path.dirname(url).replace("https://", '').replace("http://", '')
+    file_name = os.path.join(dir_name, name)
 
     os.makedirs(dir_name, exist_ok=True)
-    print(f"save: {file_name} dir: {dir_name} path: {path_to_save}")
+
+    file_size = os.path.getsize(file_name) if os.path.exists(file_name) else 0
+    request = urllib.request.Request(url)
+    request.add_header("Range", "bytes={}-".format(file_size))
+
+    with urllib.request.urlopen(request) as response, open(file_name, "ab") as file:
+        shutil.copyfileobj(response, file)
+    print(f"save to: {file_name}")
 
 
 def handle_download(args):
