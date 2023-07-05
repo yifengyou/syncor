@@ -11,11 +11,11 @@ import datetime
 import multiprocessing
 import os.path
 import shutil
+import sys
 import urllib
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
 import requests
-import sys
 from bs4 import BeautifulSoup
 
 CURRENT_VERSION = "0.1.0"
@@ -26,6 +26,11 @@ def beijing_timestamp():
     beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
     beijing_time = utc_time.astimezone(beijing_tz)
     return beijing_time.strftime("%Y/%m/%d %H:%M:%S")
+
+
+def perror(str):
+    print("Error: ", str)
+    sys.exit(1)
 
 
 def check_python_version():
@@ -83,17 +88,18 @@ def handle_url(args):
         print("try download in quiet")
     else:
         print("try download ....")
-    wget_m(args.url, args.manifest, args.quiet)
+    wget_m(args.url, args.output, args.quiet)
     end_time = beijing_timestamp()
     print(f"handle url done! {begin_time} - {end_time}")
 
 
-def process_url(urls_with_index):
-    (index, total, url) = urls_with_index
+def process_per_url(urls_with_index):
+    (index, total, prefix, url) = urls_with_index
     url = unquote(url)
     name = os.path.basename(url)
-    dir_name = os.path.dirname(url).replace("https://", '').replace("http://", '')
+    dir_name = os.path.join(prefix, os.path.dirname(url).replace("https://", '').replace("http://", ''))
     file_name = os.path.join(dir_name, name)
+    print(f"file name: {file_name}")
 
     os.makedirs(dir_name, exist_ok=True)
 
@@ -103,28 +109,34 @@ def process_url(urls_with_index):
 
     with urllib.request.urlopen(request) as response, open(file_name, "ab") as file:
         shutil.copyfileobj(response, file)
-    print(f"[ {index}/{total} ]save to: {file_name}")
+    print(f"[ {index}/{total} ] Save to: {file_name}")
 
 
 def handle_download(args):
+    begin_time = beijing_timestamp()
     if os.path.isfile(args.download):
         print(f"target manifest is {args.download}")
     with open(args.download, 'r') as tf:
         urls = tf.readlines()
     urls_with_index = []
     total = len(urls)
+    if not args.prefix.startswith("/"):
+        perror("prefix must start with /")
+
     for i, url in enumerate(urls):
         url = url.strip()
         if url.startswith("http"):
             urls_with_index.append(
-                (i + 1, total, url)
+                (i + 1, total, args.prefix, url)
             )
 
     pool = multiprocessing.Pool(args.job)
-    pool.imap_unordered(process_url, urls_with_index)
+    pool.imap_unordered(process_per_url, urls_with_index)
 
     pool.close()
     pool.join()
+    end_time = beijing_timestamp()
+    print(f"handle download done! {begin_time} - {end_time}")
 
 
 def main():
@@ -137,19 +149,17 @@ def main():
     parser.add_argument("-h", "--help", action="store_true",
                         help="show this help message and exit")
     parser.add_argument("-u", "--url", default=None,
-                        help="target url link")
+                        help="target url link without parent")
+    parser.add_argument("-o", "--output", default="manifest.txt",
+                        help="setup output manifest path")
     parser.add_argument("-d", "--download", default=None,
                         help="download from url list")
-    parser.add_argument("-m", "--manifest", default="manifest.txt",
-                        help="manifest path")
     parser.add_argument("-j", "--job", default=os.cpu_count(), type=int,
                         help="job count")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="quiet output")
-    parser.add_argument("-p", "--prefix", default='./',
+    parser.add_argument("-p", "--prefix", default='',
                         help="setup saving prefix")
-    parser.add_argument("--just-manifest", action="store_true",
-                        help="only manifest")
 
     # 开始解析命令
     args = parser.parse_args()
