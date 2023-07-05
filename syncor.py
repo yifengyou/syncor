@@ -118,6 +118,9 @@ def handle_download(args):
     begin_time = beijing_timestamp()
     if os.path.isfile(args.download):
         print(f"target manifest is {args.download}")
+    else:
+        perror(f"target manifest {args.download} is not found!")
+
     with open(args.download, 'r') as tf:
         urls = tf.readlines()
     urls_with_index = []
@@ -186,7 +189,7 @@ def check_rpm(dir, ff):
         # 如果是文件，且以.rpm结尾
         if os.path.isfile(path) and path.endswith(".rpm"):
             # 调用rpm -K命令检查rpm包是否完整
-            retcode, stdout, stderr = do_exe_cmd(["rpm", "-K", path], print_output=False, shell=False)
+            retcode, stdout, stderr = do_exe_cmd(["rpm", "-K", "--nosignature", path], print_output=False, shell=False)
             if 0 != retcode:
                 ff.write(f"{path} [{retcode}]\nSTDOUT:{stdout.strip()}\nSTDERR:{stderr.strip()}\n")
         # 如果是子目录，递归调用函数
