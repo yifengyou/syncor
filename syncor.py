@@ -8,6 +8,10 @@
 
 import argparse
 import datetime
+import multiprocessing
+import os.path
+from urllib.parse import unquote, urlparse
+
 import requests
 import sys
 from bs4 import BeautifulSoup
@@ -32,6 +36,7 @@ def check_python_version():
 
 def get_file_links(url, quiet=False):
     file_links = []
+    # print(f"url {url}")
     response = requests.get(url)
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -52,7 +57,7 @@ def wget_m(url, filename, quiet=False):
     with open(filename, 'a') as f:
         file_links = get_file_links(url, quiet)
         for file_link in file_links:
-            f.write(file_link + '\n')
+            f.write(unquote(file_link) + '\n')
         response = requests.get(url)
 
         if response.status_code == 200:
@@ -81,6 +86,30 @@ def handle_url(args):
     print(f"handle url done! {begin_time} - {end_time}")
 
 
+def process_url(url):
+    format_url = unquote(url)
+    file_name = os.path.basename(format_url)
+    dir_name = os.path.dirname(format_url).replace("https://", '').replace("http://", '')
+    path_to_save = os.path.join(dir_name, file_name)
+
+    os.makedirs(dir_name, exist_ok=True)
+    print(f"save: {file_name} dir: {dir_name} path: {path_to_save}")
+
+
+def handle_download(args):
+    if os.path.isfile(args.download):
+        print(f"target manifest is {args.download}")
+    with open(args.download, 'r') as tf:
+        urls = tf.readlines()
+    urls = [url.strip() for url in urls]
+    pool = multiprocessing.Pool(args.job)
+
+    pool.map_async(process_url, urls)
+
+    pool.close()
+    pool.join()
+
+
 def main():
     global CURRENT_VERSION
     check_python_version()
@@ -92,10 +121,16 @@ def main():
                         help="show this help message and exit")
     parser.add_argument("-u", "--url", default=None,
                         help="target url link")
+    parser.add_argument("-d", "--download", default=None,
+                        help="download from url list")
     parser.add_argument("-m", "--manifest", default="manifest.txt",
                         help="manifest path")
+    parser.add_argument("-j", "--job", default=os.cpu_count(), type=int,
+                        help="job count")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="quiet output")
+    parser.add_argument("-p", "--prefix", default='./',
+                        help="setup saving prefix")
     parser.add_argument("--just-manifest", action="store_true",
                         help="only manifest")
 
@@ -110,6 +145,8 @@ def main():
         sys.exit(0)
     elif args.url is not None:
         handle_url(args)
+    elif args.download is not None:
+        handle_download(args)
     else:
         args.func(args)
 
