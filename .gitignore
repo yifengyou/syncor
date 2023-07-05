@@ -1,8 +1,10 @@
+192.168.33.99
 test*
 back
 .back
 manifest.txt*
 log*
+*.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

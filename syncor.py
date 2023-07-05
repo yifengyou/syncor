@@ -11,11 +11,13 @@ import datetime
 import multiprocessing
 import os.path
 import shutil
+import subprocess
 import sys
 import urllib
 from urllib.parse import unquote
 
 import requests
+import select
 from bs4 import BeautifulSoup
 
 CURRENT_VERSION = "0.1.0"
@@ -120,7 +122,7 @@ def handle_download(args):
         urls = tf.readlines()
     urls_with_index = []
     total = len(urls)
-    if not args.prefix.startswith("/"):
+    if args.prefix != "" and not args.prefix.startswith("/"):
         perror("prefix must start with /")
 
     for i, url in enumerate(urls):
@@ -139,6 +141,68 @@ def handle_download(args):
     print(f"handle download done! {begin_time} - {end_time}")
 
 
+def do_exe_cmd(cmd, print_output=False, shell=False):
+    stdout_output = ''
+    stderr_output = ''
+    if isinstance(cmd, str):
+        cmd = cmd.split()
+    elif isinstance(cmd, list):
+        pass
+    else:
+        raise Exception("unsupported type when run do_exec_cmd", type(cmd))
+
+    # print("Run cmd:" + " ".join(cmd))
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
+    while True:
+        # 使用select模块，监控stdout和stderr的可读性，设置超时时间为0.1秒
+        rlist, _, _ = select.select([p.stdout, p.stderr], [], [], 0.1)
+        # 遍历可读的文件对象
+        for f in rlist:
+            # 读取一行内容，解码为utf-8
+            line = f.readline().decode('utf-8').strip()
+            # 如果有内容，判断是stdout还是stderr，并打印到屏幕，并刷新缓冲区
+            if line:
+                if f == p.stdout:
+                    if print_output == True:
+                        print("STDOUT", line)
+                    stdout_output += line + '\n'
+                    sys.stdout.flush()
+                elif f == p.stderr:
+                    if print_output == True:
+                        print("STDERR", line)
+                    stderr_output += line + '\n'
+                    sys.stderr.flush()
+        if p.poll() is not None:
+            break
+    return p.returncode, stdout_output, stderr_output
+
+
+# 定义一个函数，接受一个目录作为参数
+def check_rpm(dir, ff):
+    # 遍历目录下的所有文件和子目录
+    for file in os.listdir(dir):
+        # 拼接完整的路径
+        path = os.path.join(dir, file)
+        # 如果是文件，且以.rpm结尾
+        if os.path.isfile(path) and path.endswith(".rpm"):
+            # 调用rpm -K命令检查rpm包是否完整
+            retcode, stdout, stderr = do_exe_cmd(["rpm", "-K", path], print_output=False, shell=False)
+            if 0 != retcode:
+                ff.write(f"{path} [{retcode}]\nSTDOUT:{stdout.strip()}\nSTDERR:{stderr.strip()}\n")
+        # 如果是子目录，递归调用函数
+        elif os.path.isdir(path):
+            check_rpm(path, ff)
+
+
+def handle_rpm_check(args):
+    begin_time = beijing_timestamp()
+    with open("check_failed.log", "w") as ff:
+        check_rpm(args.check, ff)
+    end_time = beijing_timestamp()
+    print("check failed output to file: check_failed.log")
+    print(f"handle download done! {begin_time} - {end_time}")
+
+
 def main():
     global CURRENT_VERSION
     check_python_version()
@@ -150,7 +214,7 @@ def main():
                         help="show this help message and exit")
     parser.add_argument("-u", "--url", default=None,
                         help="target url link without parent")
-    parser.add_argument("-o", "--output", default="manifest.txt",
+    parser.add_argument("-o", "--output", default="manifest.log",
                         help="setup output manifest path")
     parser.add_argument("-d", "--download", default=None,
                         help="download from url list")
@@ -160,6 +224,8 @@ def main():
                         help="quiet output")
     parser.add_argument("-p", "--prefix", default='',
                         help="setup saving prefix")
+    parser.add_argument("-c", "--check", default='',
+                        help="verify rpm in target directory")
 
     # 开始解析命令
     args = parser.parse_args()
@@ -174,6 +240,8 @@ def main():
         handle_url(args)
     elif args.download is not None:
         handle_download(args)
+    elif args.check is not None:
+        handle_rpm_check(args)
     else:
         args.func(args)
 
